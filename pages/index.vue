@@ -1,6 +1,7 @@
 <template>
   <div class="container-fluid py-4">
-    <!-- KPI Cards -->
+
+    <!-- ================= DASHBOARD KPI ================= -->
     <div class="row g-4 mb-4">
       <div class="col-6 col-md-3" v-for="card in kpis" :key="card.title">
         <div class="card shadow-sm h-100 border-0">
@@ -17,7 +18,7 @@
       </div>
     </div>
 
-    <!-- Charts -->
+    <!-- ================= CHART & TOP PRODUCTS ================= -->
     <div class="row g-4">
       <div class="col-12 col-lg-8">
         <div class="card shadow-sm border-0 h-100">
@@ -31,56 +32,101 @@
         <div class="card shadow-sm border-0 h-100">
           <div class="card-header bg-white fw-semibold">Top Products</div>
           <ul class="list-group list-group-flush">
-            <li v-for="p in products" :key="p.name" class="list-group-item d-flex justify-content-between">
-              <span class="text-truncate">{{ p.name }}</span>
-              <span class="fw-semibold">{{ p.sales }}</span>
+            <li v-for="p in topProducts" :key="p.item_name" class="list-group-item d-flex justify-content-between">
+              <span class="text-truncate">{{ p.item_name }}</span>
+              <span class="fw-semibold">{{ p.total_quantity }}</span>
             </li>
           </ul>
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
 <script setup>
-import { onMounted } from "vue";
-import { Chart, registerables } from "chart.js";
-Chart.register(...registerables);
+import { ref, onMounted } from 'vue'
+import Chart from 'chart.js/auto'
 
-// Dummy data
-const kpis = [
-  { title: "Total Sales", value: "$12,450", icon: "bi bi-cart-check" },
-  { title: "Revenue", value: "$48,320", icon: "bi bi-cash-stack" },
-  { title: "Inventory", value: "1,234", icon: "bi bi-box-seam" },
-  { title: "Employees", value: "4", icon: "bi bi-people" },
-];
-const products = [
-  { name: "Logo", sales: "320" },
-  { name: "Topi", sales: "210" },
-  { name: "Seragam", sales: "150" },
-];
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-onMounted(() => {
-  const ctx = document.getElementById("salesChart").getContext("2d");
-  new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-      datasets: [{
-        label: "Sales ($)",
-        data: [1200, 1900, 1500, 2200, 2800, 3200],
-        borderColor: "#0d6efd",
-        backgroundColor: "rgba(13,110,253,0.2)",
-        tension: 0.3,
-        fill: true,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true } },
-    },
-  });
-});
+// --- DASHBOARD ---
+const kpis = ref([
+  { title: "Total Sales", value: 0, icon: "bi bi-cart-check" },
+  { title: "Revenue", value: 0, icon: "bi bi-cash-stack" },
+  { title: "Inventory", value: 0, icon: "bi bi-box-seam" },
+  { title: "Employees", value: 0, icon: "bi bi-people" },
+])
+const topProducts = ref([])
+
+// =================== FORMAT ===================
+function formatCurrency(num){
+  return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR'}).format(num||0)
+}
+
+// =================== DASHBOARD FETCH ===================
+async function fetchDashboard() {
+  try{
+    // --- SALES ---
+    const resSales = await fetch(`${supabaseUrl}/rest/v1/sales?select=subtotal,quantity,item_name,sale_date`, {
+      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
+    })
+    const salesData = await resSales.json()
+    if(!Array.isArray(salesData)) throw new Error("Data sales tidak valid")
+
+    // Total Sales & Revenue
+    kpis.value[0].value = salesData.length
+    kpis.value[1].value = formatCurrency(salesData.reduce((sum,s)=>sum+Number(s.subtotal||0),0))
+
+    // Chart Bulanan
+    const months = Array.from({length:12},(_,i)=>i+1)
+    const monthlySales = months.map(m =>
+      salesData.filter(s=>new Date(s.sale_date).getMonth()+1===m)
+               .reduce((sum,s)=>sum+Number(s.subtotal||0),0)
+    )
+    const ctx = document.getElementById("salesChart").getContext("2d")
+    new Chart(ctx,{
+      type:"line",
+      data:{
+        labels: months.map(m=>`Bulan ${m}`),
+        datasets:[{
+          label:"Sales",
+          data: monthlySales,
+          borderColor:"#0d6efd",
+          backgroundColor:"rgba(13,110,253,0.2)",
+          fill:true,
+          tension:0.3
+        }]
+      },
+      options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
+    })
+
+    // --- INVENTORY ---
+    const resInv = await fetch(`${supabaseUrl}/rest/v1/inventory?select=id`, {
+      headers:{apikey:supabaseKey, Authorization:`Bearer ${supabaseKey}`}
+    })
+    const invData = await resInv.json()
+    kpis.value[2].value = Array.isArray(invData)? invData.length:0
+
+    // --- EMPLOYEES ---
+    const resEmp = await fetch(`${supabaseUrl}/rest/v1/employees?select=id`, {
+      headers:{apikey:supabaseKey, Authorization:`Bearer ${supabaseKey}`}
+    })
+    const empData = await resEmp.json()
+    kpis.value[3].value = Array.isArray(empData)? empData.length:0
+
+    // --- TOP PRODUCTS ---
+    const topMap = {}
+    salesData.forEach(s=>{ topMap[s.item_name] = (topMap[s.item_name]||0)+Number(s.quantity||0) })
+    topProducts.value = Object.entries(topMap)
+      .map(([item_name,total_quantity])=>({item_name,total_quantity}))
+      .sort((a,b)=>b.total_quantity - a.total_quantity)
+      .slice(0,5)
+
+  }catch(err){ console.error(err); alert("Gagal fetch dashboard: "+err.message) }
+}
+
+// =================== MOUNT ===================
+onMounted(fetchDashboard)
 </script>

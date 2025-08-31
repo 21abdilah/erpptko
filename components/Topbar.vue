@@ -19,7 +19,6 @@
 
     <!-- Actions -->
     <div class="d-flex align-items-center gap-3">
-      
       <!-- Notifikasi -->
       <div class="dropdown">
         <button
@@ -44,8 +43,11 @@
           <li
             v-for="n in notifications"
             :key="n.id"
-            class="dropdown-item"
+            class="dropdown-item text-danger small"
+            @click="goToInventory"
+            style="cursor:pointer;"
           >
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
             {{ n.message }}
           </li>
         </ul>
@@ -96,37 +98,72 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
 
-// Props notifikasi
-const props = defineProps({
-  notifications: {
-    type: Array,
-    default: () => [],
-  },
-});
+const router = useRouter();
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// State user
+// State
 const user = ref(null);
+const notifications = ref([]);
+let intervalId = null;
 
-// Ambil data user dari localStorage
 onMounted(() => {
   const saved = localStorage.getItem("user");
-  if (saved) {
-    user.value = JSON.parse(saved);
-  }
+  if (saved) user.value = JSON.parse(saved);
+
+  fetchNotifications();
+  intervalId = setInterval(fetchNotifications, 60000); // refresh tiap 60 detik
 });
 
-// Logout function
+onUnmounted(() => {
+  if (intervalId) clearInterval(intervalId);
+});
+
+// Ambil stok habis langsung dari REST API Supabase
+async function fetchNotifications() {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/products?select=id,name,stock&stock=lte.0`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      }
+    );
+
+    if (!res.ok) throw new Error(`Fetch gagal: ${res.status}`);
+
+    const data = await res.json();
+    notifications.value = data.map((item) => ({
+      id: item.id,
+      message: `Stok produk "${item.name}" habis!`,
+    }));
+  } catch (err) {
+    console.error("Gagal ambil notifikasi:", err.message);
+  }
+}
+
+// Klik notifikasi → redirect ke halaman Inventory
+function goToInventory() {
+  router.push("/inventory");
+}
+
 function logout() {
   localStorage.removeItem("user");
   user.value = null;
-  window.location.href = "/login"; // redirect ke halaman login
+  window.location.href = "/login";
 }
 </script>
 
 <style scoped>
 .navbar .badge {
   font-size: 0.65rem;
+}
+.dropdown-item.text-danger {
+  font-weight: 500;
 }
 </style>

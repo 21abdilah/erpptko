@@ -81,7 +81,7 @@
             <td>{{ formatDate(s.sale_date) }}</td>
             <td>{{ s.customer_name }}</td>
             <td>{{ s.item_name }}</td>
-            <td>{{ s.product_category }}</td>
+            <td>{{ s.product_category || '-' }}</td>
             <td class="text-end">{{ s.quantity }}</td>
             <td class="text-end">{{ formatCurrency(s.price) }}</td>
             <td class="text-end">{{ formatCurrency(s.subtotal) }}</td>
@@ -90,12 +90,12 @@
               <span
                 class="badge"
                 :class="{
-                  'bg-success': s.status==='paid' || s.paid >= s.subtotal - s.discount,
-                  'bg-warning text-dark': s.status==='unpaid',
-                  'bg-orange text-dark': s.status==='partial'
+                  'bg-success': s.status==='paid',
+                  'bg-warning text-dark': s.status==='partial',
+                  'bg-danger': s.status==='unpaid'
                 }"
               >
-                {{ (s.status==='paid' || s.paid >= s.subtotal - s.discount) ? 'Lunas' : s.status==='partial' ? 'Belum Lunas Parsial' : 'Belum Lunas' }}
+                {{ s.status==='paid'?'Lunas':s.status==='partial'?'Belum Lunas Parsial':'Belum Lunas' }}
               </span>
             </td>
           </tr>
@@ -172,14 +172,25 @@ async function fetchReports(period) {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
     })
     const data = await res.json()
-    sales.value = Array.isArray(data) ? data.map(s=>{
+    sales.value = Array.isArray(data) ? data.map(s => {
       const paid = s.partial_payment ?? 0
       const total = s.subtotal ?? 0
       const discount = s.discount ?? 0
       const remaining = Math.max(0, total - discount - paid)
       const status = remaining === 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid'
-      return {...s, paid, remaining, status}
+
+      // Pastikan kategori selalu ada
+      const category = s.product_category || s.category || s.product?.category || '-'
+
+      return { ...s, paid, remaining, status, product_category: category }
     }) : []
+
+    // Urutkan supaya yang belum lunas muncul paling atas
+    sales.value.sort((a,b) => {
+      const aStatus = a.status==='paid' ? 1 : 0
+      const bStatus = b.status==='paid' ? 1 : 0
+      return aStatus - bStatus
+    })
 
     totalSales.value = sales.value.reduce((sum, s) => sum + Number(s.subtotal||0), 0)
     totalDiscount.value = sales.value.reduce((sum, s) => sum + Number(s.discount||0), 0)
@@ -201,10 +212,85 @@ function prevPage() { if(currentPage.value>1) currentPage.value-- }
 function nextPage() { if(currentPage.value<totalPages.value) currentPage.value++ }
 function goPage(n) { currentPage.value = n }
 
-// Print
-function printSelected() { /* kode print */ }
-function printAll() { /* kode print */ }
+// Print halaman aktif
+function printSelected() {
+  const tableContents = document.querySelector(".table-responsive").innerHTML
+  const win = window.open("", "", "width=900,height=700")
+  win.document.write(`
+    <html>
+      <head>
+        <title>Laporan Transaksi - Halaman ${currentPage.value}</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { padding: 6px; }
+        </style>
+      </head>
+      <body>${tableContents}</body>
+    </html>
+  `)
+  win.document.close()
+  win.print()
+}
 
+// Print semua halaman
+function printAll() {
+  const allRows = sales.value.map(s => `
+    <tr>
+      <td>${new Date(s.sale_date).toLocaleDateString('id-ID')}</td>
+      <td>${s.customer_name}</td>
+      <td>${s.item_name}</td>
+      <td>${s.product_category || '-'}</td>
+      <td class="text-end">${s.quantity}</td>
+      <td class="text-end">${formatCurrency(s.price)}</td>
+      <td class="text-end">${formatCurrency(s.subtotal)}</td>
+      <td class="text-end">${formatCurrency(s.discount)}</td>
+      <td class="text-center">
+        <span class="badge ${s.status==='paid'?'bg-success':s.status==='partial'?'bg-warning text-dark':'bg-danger'}">
+          ${s.status==='paid'?'Lunas':s.status==='partial'?'Belum Lunas Parsial':'Belum Lunas'}
+        </span>
+      </td>
+    </tr>
+  `).join("")
+
+  const win = window.open("", "", "width=900,height=700")
+  win.document.write(`
+    <html>
+      <head>
+        <title>Laporan Transaksi - Semua Data</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { padding: 6px; }
+        </style>
+      </head>
+      <body>
+        <table class="table table-bordered table-striped">
+          <thead class="table-dark">
+            <tr>
+              <th>Tanggal</th>
+              <th>Customer</th>
+              <th>Item</th>
+              <th>Kategori</th>
+              <th class="text-end">Qty</th>
+              <th class="text-end">Harga</th>
+              <th class="text-end">Subtotal</th>
+              <th class="text-end">Diskon</th>
+              <th class="text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody>${allRows}</tbody>
+        </table>
+      </body>
+    </html>
+  `)
+  win.document.close()
+  win.print()
+}
+
+// Set Hari Ini
 function setToday() {
   const today = new Date()
   const from = today.toISOString().split('T')[0] + "T00:00:00.000Z"
@@ -214,24 +300,25 @@ function setToday() {
   fetchReports({ from, to })
 }
 
+// Apply Filter
 function applyFilter() {
-  if (mode.value==='day') fetchReports({ from: filterDay.value+"T00:00:00.000Z", to: filterDay.value+"T23:59:59.999Z" })
-  else if (mode.value==='week'){ 
+  if(mode.value==='day') {
+    fetchReports({ from: filterDay.value+"T00:00:00.000Z", to: filterDay.value+"T23:59:59.999Z" })
+  } else if(mode.value==='week') {
     const [year, week] = filterWeek.value.split('-W')
     const d = new Date(year,0,1 + (week-1)*7)
     const dayOfWeek = d.getDay()
     const monday = new Date(d); monday.setDate(d.getDate() - (dayOfWeek===0?6:dayOfWeek-1))
     const sunday = new Date(monday); sunday.setDate(monday.getDate()+6)
     fetchReports({ from:monday.toISOString(), to:sunday.toISOString() })
-  }
-  else if (mode.value==='month'){
+  } else if(mode.value==='month') {
     const from = filterMonth.value+'-01T00:00:00.000Z'
     const to   = filterMonth.value+'-31T23:59:59.999Z'
     fetchReports({ from, to })
   }
 }
 
-onMounted(()=>{ setToday() })
+onMounted(() => { setToday() })
 </script>
 
 <style scoped>

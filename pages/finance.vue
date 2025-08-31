@@ -113,14 +113,16 @@ function formatCurrency(num){
   return new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR' }).format(num || 0)
 }
 
-// Ambil total penjualan
+// Ambil total penjualan (subtotal – discount)
 async function fetchTotalSales(from, to){
   try{
     const res = await fetch(`${SUPABASE_URL}/rest/v1/report_sales_detail?sale_date=gte.${from}&sale_date=lte.${to}`, {
       headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
     })
     const data = await res.json()
-    return Array.isArray(data)? data.reduce((sum, s)=> sum + Number(s.subtotal||0),0) : 0
+    return Array.isArray(data) 
+      ? data.reduce((sum, s) => sum + (Number(s.subtotal||0) - Number(s.discount||0)), 0) 
+      : 0
   } catch(err){
     console.error(err)
     return 0
@@ -175,10 +177,15 @@ async function fetchFinance(customFrom, customTo){
       to   = end.toISOString().split('T')[0] + "T23:59:59.999Z"
     }
 
+    // Total Penjualan = sum(subtotal – discount)
     totalIncome.value = await fetchTotalSales(from, to)
+
+    // Pengeluaran
     const expData = await fetchExpenses(from, to)
     expenses.value = expData
     totalExpense.value = expenses.value.reduce((sum,e)=> sum + Number(e.amount||0),0)
+
+    // Pendapatan Bersih = totalIncome – totalExpense
     netIncome.value = totalIncome.value - totalExpense.value
   } catch(err){
     console.error(err)
@@ -191,7 +198,6 @@ async function addExpense(e){
   try{
     if(!e.name || !e.amount) return alert('Nama dan jumlah wajib diisi');
 
-    // Jika ExpenseForm memberikan waktu, pakai waktu tsb
     let createdAt = new Date().toISOString()
     if(e.time) {
       const datePart = filterDay.value || new Date().toISOString().split('T')[0]
@@ -248,3 +254,4 @@ function printTable(){
   w.print()
 }
 </script>
+

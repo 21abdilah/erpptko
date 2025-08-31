@@ -151,9 +151,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
+import { useRoute } from "vue-router";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const route = useRoute();
 
 const products = ref([]);
 const cart = ref([]);
@@ -162,6 +165,7 @@ const customPrice = ref(0);
 const discount = ref(0);
 const partialPayment = ref(0);
 const search = ref("");
+const selectedCategory = ref("");
 const customerName = ref("");
 
 // Toast
@@ -187,13 +191,50 @@ async function fetchProducts() {
   });
   products.value = await res.json();
 }
-onMounted(fetchProducts);
+
+// Auto-add produk dari query param
+onMounted(async () => {
+  await fetchProducts(); // pastikan products sudah terisi
+
+  const productId = route.query.product;
+  const qty = Number(route.query.quantity) || 1;
+
+  if (productId) {
+    const product = products.value.find(p => p.id == productId);
+    if (product) {
+      const exist = cart.value.find(i => i.product_id === product.id);
+      if (exist) {
+        exist.quantity += qty;
+        if (exist.quantity > product.stock) exist.quantity = product.stock;
+      } else {
+        cart.value.push({
+          product_id: product.id,
+          item_name: product.name,
+          price: product.price,
+          quantity: qty,
+          stock: product.stock
+        });
+      }
+    }
+  }
+});
+
+// Daftar kategori unik
+const categories = computed(() => {
+  const cats = products.value.map(p => p.category).filter(Boolean);
+  return [...new Set(cats)];
+});
 
 // Filter produk
 const filteredProducts = computed(() =>
-  products.value.filter((p) =>
-    p.name.toLowerCase().includes(search.value.toLowerCase())
-  )
+  products.value.filter(p => {
+    const matchKeyword =
+      !search.value ||
+      p.name.toLowerCase().includes(search.value.toLowerCase()) ||
+      (p.category && p.category.toLowerCase().includes(search.value.toLowerCase()));
+    const matchCategory = !selectedCategory.value || p.category === selectedCategory.value;
+    return matchKeyword && matchCategory;
+  })
 );
 
 // Tambah produk ke keranjang
@@ -241,21 +282,17 @@ const totalAfterDiscount = computed(() => total.value - (Number(discount.value) 
 const kembalian = computed(() => Math.max(Number(partialPayment.value) - totalAfterDiscount.value, 0));
 const autoStatus = computed(() => (partialPayment.value >= totalAfterDiscount.value && totalAfterDiscount.value > 0 ? "lunas" : "belum lunas"));
 
-// Checkout
+// Checkout (panggil Supabase saat benar-benar transaksi)
 async function checkout() {
   if (cart.value.length === 0) return triggerToast("Keranjang kosong!");
-
-  const payload = [
-    {
-      customer_name: customerName.value || "Umum",
-      total: totalAfterDiscount.value,
-      discount: Number(discount.value) || 0,
-      partial_payment: Number(partialPayment.value) || 0,
-      status: autoStatus.value,
-    },
-  ];
-
-  console.log("Payload:", payload);
+  
+  const payload = [{
+    customer_name: customerName.value || "Umum",
+    total: totalAfterDiscount.value,
+    discount: Number(discount.value) || 0,
+    partial_payment: Number(partialPayment.value) || 0,
+    status: autoStatus.value,
+  }];
 
   const saleRes = await fetch(`${SUPABASE_URL}/rest/v1/sales`, {
     method: "POST",
@@ -313,16 +350,6 @@ async function checkout() {
   partialPayment.value = 0;
   customerName.value = "";
   fetchProducts();
-
-  // 🔹 Tambahan: kirim event global supaya history.vue update status otomatis
-  const saleInfo = {
-    sale_id,
-    customer_name: customerName.value || "Umum",
-    total: totalAfterDiscount.value,
-    discount: Number(discount.value) || 0,
-    status: autoStatus.value,
-  };
-  window.dispatchEvent(new CustomEvent('sale-updated', { detail: saleInfo }));
 }
 </script>
 

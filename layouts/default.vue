@@ -1,11 +1,7 @@
 <template>
   <div class="app-layout d-flex">
-    <!-- Backdrop untuk mobile -->
-    <div
-      v-if="mobileOpen"
-      class="sidebar-backdrop"
-      @click="mobileOpen = false"
-    ></div>
+    <!-- Backdrop Mobile -->
+    <div v-if="mobileOpen" class="sidebar-backdrop" @click="mobileOpen = false"></div>
 
     <!-- Sidebar -->
     <Sidebar
@@ -20,13 +16,13 @@
       :class="collapsed ? 'collapsed' : 'expanded'"
     >
       <!-- Topbar -->
-      <Topbar 
+      <Topbar
         @toggle-mobile="mobileOpen = !mobileOpen"
         :notifications="notifications"
         :class="collapsed ? 'collapsed' : 'expanded'"
       />
 
-      <!-- Page Slot -->
+      <!-- Page Content -->
       <main class="flex-fill p-3 p-md-4 bg-light">
         <slot />
       </main>
@@ -81,7 +77,7 @@ onMounted(fetchStockNotifications);
   min-height: 100vh;
 }
 
-/* Backdrop untuk mobile */
+/* Backdrop Mobile */
 .sidebar-backdrop {
   position: fixed;
   inset: 0;
@@ -105,7 +101,7 @@ onMounted(fetchStockNotifications);
   border-right: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-/* Animasi slide sidebar */
+/* Animasi Slide */
 .slide-enter-active,
 .slide-leave-active {
   transition: transform 0.3s ease, opacity 0.3s ease;
@@ -156,4 +152,3 @@ onMounted(fetchStockNotifications);
   }
 }
 </style>
-

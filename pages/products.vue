@@ -1,13 +1,30 @@
 <template>
   <div class="container py-2">
-    <!-- Judul & Search -->
-    <h1 class="text-center fw-bold mb-1 text-xl">📦 Produk</h1>
-    <input
-      v-model="keyword"
-      type="text"
-      class="form-control form-control-sm mb-2"
-      placeholder="Cari produk..."
-    />
+    <!-- Judul & Total Produk -->
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <h1 class="fw-bold text-xl mb-0">📦 Produk</h1>
+      <span class="badge bg-primary">Total: {{ filteredProducts.length }}</span>
+    </div>
+
+    <!-- Filter Kategori + Search -->
+    <div class="d-flex gap-2 mb-2">
+      <input
+        v-model="selectedCategory"
+        list="category-list"
+        class="form-control form-control-sm w-auto"
+        placeholder="Filter kategori..."
+      />
+      <datalist id="category-list">
+        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+      </datalist>
+
+      <input
+        v-model="keyword"
+        type="text"
+        class="form-control form-control-sm"
+        placeholder="Cari produk..."
+      />
+    </div>
 
     <!-- Grid Produk -->
     <div class="row g-5">
@@ -31,14 +48,17 @@
 
           <div class="card-body p-2 d-flex flex-column">
             <h6 class="card-title mb-1 text-truncate">{{ p.name }}</h6>
-
-            <!-- Harga & stok dalam 1 baris -->
+            <p class="small text-muted mb-1">{{ p.category }}</p>
             <div class="d-flex justify-content-between align-items-center mb-2">
               <span class="text-success fw-semibold small">{{ formatCurrency(p.price) }}</span>
               <span class="text-muted small">📦{{ p.stock }}</span>
             </div>
 
-            <button class="btn btn-sm btn-outline-primary w-100 mt-auto" @click="goToSales(p)">
+            <button 
+              class="btn btn-sm btn-outline-primary w-100 mt-auto" 
+              @click="goToSales(p)"
+              :disabled="p.stock <= 0"
+            >
               BELI
             </button>
           </div>
@@ -58,7 +78,9 @@ const router = useRouter()
 
 const products = ref([])
 const keyword = ref('')
+const selectedCategory = ref('')
 
+// Ambil data produk
 onMounted(async () => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/products?select=*`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
@@ -66,19 +88,30 @@ onMounted(async () => {
   products.value = await res.json()
 })
 
+// Buat daftar kategori unik
+const categories = computed(() => {
+  const cats = products.value.map(p => p.category).filter(Boolean)
+  return [...new Set(cats)]
+})
+
+// Filter berdasarkan keyword & kategori
 const filteredProducts = computed(() => {
-  if (!keyword.value) return products.value
-  return products.value.filter(p =>
-    p.name.toLowerCase().includes(keyword.value.toLowerCase())
-  )
+  return products.value.filter(p => {
+    const matchKeyword = !keyword.value || 
+      p.name.toLowerCase().includes(keyword.value.toLowerCase()) ||
+      (p.category && p.category.toLowerCase().includes(keyword.value.toLowerCase()))
+    const matchCategory = !selectedCategory.value || p.category === selectedCategory.value
+    return matchKeyword && matchCategory
+  })
 })
 
 function formatCurrency(num) {
   return new Intl.NumberFormat('id-ID', { style:'currency', currency:'IDR' }).format(num || 0)
 }
 
+// Navigasi ke sales.vue + kirim product id lewat query
 function goToSales(product) {
-  router.push({ name: 'sales', query: { product: product.id } })
+  router.push({ name: 'sales', query: { product: product.id, quantity: 1 } })
 }
 </script>
 
@@ -86,23 +119,8 @@ function goToSales(product) {
 .hover-card { transition: 0.2s ease; }
 .hover-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 
-.card-img-top {
-  height: 90px;
-  object-fit: cover;
-  border-radius: 0.5rem 0.5rem 0 0;
-}
-
-.card-title {
-  font-size: clamp(0.75rem, 2vw, 0.85rem);
-}
-
-.btn {
-  font-size: 0.75rem;
-  padding: 0.3rem 0.4rem;
-}
-
-@media (max-width: 768px) {
-  .card-img-top { height: 80px; }
-  .row.g-2 { gap: 0.35rem; }
-}
+.card-img-top { height: 90px; object-fit: cover; border-radius: 0.5rem 0.5rem 0 0; }
+.card-title { font-size: clamp(0.75rem, 2vw, 0.85rem); }
+.btn { font-size: 0.75rem; padding: 0.3rem 0.4rem; }
+@media (max-width: 768px) { .card-img-top { height: 80px; } }
 </style>

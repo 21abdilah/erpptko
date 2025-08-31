@@ -1,7 +1,7 @@
 // plugins/bootstrap.client.ts
 import { defineNuxtPlugin } from "#app";
-import "bootstrap/dist/js/bootstrap.bundle.min.js";
+import "bootstrap/dist/css/bootstrap.min.css";
 
 export default defineNuxtPlugin(() => {
-  // Tidak perlu return apa-apa, cukup load JS Bootstrap
+  // Hanya load CSS, tidak ada JS Bootstrap
 });
