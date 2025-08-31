@@ -49,7 +49,7 @@
             {{ n.message }}
           </li>
         </ul>
-      </div>>
+      </div>
 
       <!-- User / Login -->
       <div v-if="user" class="dropdown">

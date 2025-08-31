@@ -69,14 +69,16 @@
       <table class="table table-striped table-hover mb-0">
         <thead class="table-light sticky-top">
           <tr>
-            <th class="px-2 py-1">Tanggal</th>
+            <th class="px-2 py-1">Tanggal & Waktu</th>
             <th class="px-2 py-1">Deskripsi</th>
             <th class="px-2 py-1 text-end">Jumlah</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(e,i) in expenses" :key="i">
-            <td class="px-2 py-1">{{ e?.created_at ? e.created_at.substr(0,10) : '-' }}</td>
+            <td class="px-2 py-1">
+              {{ e?.created_at ? new Date(e.created_at).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' }) : '-' }}
+            </td>
             <td class="px-2 py-1">{{ e?.name || '-' }}</td>
             <td class="px-2 py-1 text-end">{{ formatCurrency(e?.amount || 0) }}</td>
           </tr>
@@ -87,32 +89,6 @@
     <button class="mt-3 btn btn-success px-4 py-2" @click="printTable">🖨 Print Tabel</button>
   </div>
 </template>
-
-<style scoped>
-.table-hover tbody tr:hover {
-  background-color: #ffe5b4;
-  transition: 0.2s;
-}
-.table-responsive::-webkit-scrollbar {
-  width: 8px;
-}
-.table-responsive::-webkit-scrollbar-thumb {
-  background-color: rgba(0,0,0,0.2);
-  border-radius: 4px;
-}
-.btn {
-  cursor: pointer;
-}
-@media (max-width: 768px) {
-  .d-flex.flex-wrap {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .form-select, .form-control {
-    width: 100% !important;
-  }
-}
-</style>
 
 <script setup>
 import { ref, onMounted } from 'vue'
@@ -213,13 +189,19 @@ async function fetchFinance(customFrom, customTo){
 // Tambah pengeluaran
 async function addExpense(e){
   try{
-    // Pastikan data valid
     if(!e.name || !e.amount) return alert('Nama dan jumlah wajib diisi');
+
+    // Jika ExpenseForm memberikan waktu, pakai waktu tsb
+    let createdAt = new Date().toISOString()
+    if(e.time) {
+      const datePart = filterDay.value || new Date().toISOString().split('T')[0]
+      createdAt = new Date(datePart + 'T' + e.time + ':00.000Z').toISOString()
+    }
 
     const payload = {
       name: e.name,
       amount: Number(e.amount),
-      created_at: new Date().toISOString()  // ISO string format sesuai Supabase
+      created_at: createdAt
     };
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/expenses`, {
@@ -230,7 +212,7 @@ async function addExpense(e){
         'Content-Type':'application/json',
         Prefer:'return=representation'
       },
-      body: JSON.stringify([payload])  // Supabase REST API selalu array
+      body: JSON.stringify([payload])
     });
 
     const saved = await res.json();
@@ -250,7 +232,7 @@ async function addExpense(e){
 }
 
 onMounted(() => {
-  setToday()  // default load hari ini
+  setToday()
 })
 
 function printTable(){

@@ -1,5 +1,12 @@
 <template>
   <div class="app-layout d-flex">
+    <!-- Backdrop untuk mobile -->
+    <div
+      v-if="mobileOpen"
+      class="sidebar-backdrop"
+      @click="mobileOpen = false"
+    ></div>
+
     <!-- Sidebar -->
     <Sidebar
       :collapsed="collapsed"
@@ -74,7 +81,53 @@ onMounted(fetchStockNotifications);
   min-height: 100vh;
 }
 
-/* Transition halus */
+/* Backdrop untuk mobile */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 99;
+  animation: fadeIn 0.3s ease forwards;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Sidebar efek kaca */
+.sidebar-glass {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Animasi slide sidebar */
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+.slide-enter-from {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+.slide-enter-to {
+  transform: translateX(0);
+  opacity: 1;
+}
+.slide-leave-from {
+  transform: translateX(0);
+  opacity: 1;
+}
+.slide-leave-to {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+
+/* Transition halus konten */
 .main-content,
 .main-content > .navbar {
   transition: margin-left 0.3s ease, width 0.3s ease;
@@ -86,7 +139,7 @@ onMounted(fetchStockNotifications);
   min-width: 0;
 }
 
-/* Expanded sidebar */
+/* Expanded sidebar (desktop) */
 @media (min-width: 768px) {
   .main-content.expanded {
     margin-left: 250px;
@@ -96,10 +149,11 @@ onMounted(fetchStockNotifications);
   }
 }
 
-/* Mobile */
+/* Mobile full width */
 @media (max-width: 767px) {
   .main-content {
     margin-left: 0 !important;
   }
 }
 </style>
+

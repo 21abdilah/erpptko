@@ -72,6 +72,7 @@ const menu = [
   { label: "KEUANGAN", path: "/finance", icon: "bi bi-cash-stack" },
   { label: "LAPORAN", path: "/reports", icon: "bi bi-bar-chart-line" },
   { label: "RIWAYAT", path: "/history", icon: "bi bi-clock-history" },
+  { label: "PESANAN", path: "/bookings", icon: "bi bi-calendar" },
 ];
 </script>
 

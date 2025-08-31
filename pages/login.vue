@@ -6,7 +6,7 @@
         <div class="avatar bg-gradient text-white rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3 shadow-lg">
           <i class="bi bi-person-lock fs-2"></i>
         </div>
-        <h3 class="fw-bold">Welcome Back 👋</h3>
+        <h3 class="fw-bold">Selamat Datang 👋</h3>
         <p class="text-muted">Masuk ke dashboard untuk melanjutkan</p>
       </div>
 

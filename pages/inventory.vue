@@ -1,10 +1,10 @@
 <template>
   <div class="container py-4">
-    <h2 class="text-center mb-4 fw-bold">📦 KELOLA BARANG</h2>
+    <h2 class="text-center mb-3 fw-bold">📦 KELOLA BARANG</h2>
 
     <!-- Form Produk Card -->
-    <div class="card shadow-sm mb-3">
-      <div class="card-body">
+    <div>
+      <div>
         <ProductForm
           :form="form"
           :editMode="editMode"
