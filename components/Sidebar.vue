@@ -1,7 +1,14 @@
 <template>
+  <!-- Backdrop untuk mobile -->
+  <div
+    v-if="mobileOpen"
+    class="sidebar-backdrop d-md-none"
+    @click="$emit('toggle')"
+  ></div>
+
   <aside
     :class="[
-      'd-flex flex-column bg-dark text-white vh-100 shadow transition-all position-fixed top-0 start-0 z-20',
+      'd-flex flex-column bg-dark text-white vh-100 shadow position-fixed top-0 start-0 transition-all',
       collapsed ? 'sidebar-collapsed' : 'sidebar-expanded',
       mobileOpen ? 'd-block' : 'd-none d-md-flex'
     ]"
@@ -16,6 +23,8 @@
         :class="collapsed ? 'bi-chevron-double-right' : 'bi-chevron-double-left'"
         role="button"
         @click="$emit('toggle')"
+        style="cursor:pointer;"
+        aria-label="Toggle sidebar"
       ></i>
     </div>
 
@@ -39,15 +48,12 @@
       class="p-3 border-top border-secondary small text-muted d-flex flex-column"
       :title="collapsed ? 'ERP v1.0 - System Online' : ''"
     >
-      <!-- Info versi aplikasi -->
       <div class="d-flex align-items-center mb-1">
         <i class="bi bi-info-circle flex-shrink-0"></i>
         <span v-if="!collapsed" class="ms-1 text-truncate">
           ERP v1.0 - © 2025
         </span>
       </div>
-
-      <!-- Status sistem -->
       <div class="d-flex align-items-center">
         <i class="bi bi-check-circle text-success flex-shrink-0"></i>
         <span v-if="!collapsed" class="ms-1 text-truncate">
@@ -61,7 +67,7 @@
 <script setup>
 const props = defineProps({
   collapsed: Boolean,
-  mobileOpen: Boolean, // untuk toggle di mobile
+  mobileOpen: Boolean,
 });
 
 const menu = [
@@ -73,6 +79,7 @@ const menu = [
   { label: "LAPORAN", path: "/reports", icon: "bi bi-bar-chart-line" },
   { label: "RIWAYAT", path: "/history", icon: "bi bi-clock-history" },
   { label: "PESANAN", path: "/bookings", icon: "bi bi-calendar" },
+  { label: "PEGAWAI", path: "/employess", icon: "bi bi-people" },
 ];
 </script>
 
@@ -104,15 +111,23 @@ const menu = [
   transition: width 0.3s ease;
 }
 
-/* Responsive: di bawah 768px */
+/* Backdrop mobile */
+.sidebar-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 1040;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
   .sidebar-expanded,
   .sidebar-collapsed {
-    position: fixed;
-    top: 0;
-    left: 0;
     height: 100vh;
-    z-index: 30;
+    z-index: 1050; /* lebih tinggi dari header */
   }
 }
 </style>
