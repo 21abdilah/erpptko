@@ -69,22 +69,29 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { useRoute } from "vue-router";
-import { v4 as uuidv4 } from "uuid"; // <--- pastikan install: npm install uuid
+import { v4 as uuidv4 } from "uuid"; // pastikan sudah npm install uuid
 
+// ==========================
+// CONFIG SUPABASE
+// ==========================
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const route = useRoute();
 
-const products = ref([]);
-const cart = ref([]);
-const search = ref('');
-const discount = ref(0);
-const partialPayment = ref(0);
-const customerName = ref('');
-const customName = ref('');
-const customPrice = ref(0);
+// ==========================
+// STATE REACTIVES
+// ==========================
+const products = ref([]);       // daftar produk dari DB
+const cart = ref([]);           // keranjang belanja
+const search = ref('');         // filter produk
+const discount = ref(0);        // diskon
+const partialPayment = ref(0);  // uang diterima customer
+const customerName = ref('');   // nama customer
+const customName = ref('');     // nama jasa custom
+const customPrice = ref(0);     // harga jasa custom
 
+// ==========================
+// TOAST NOTIFICATION
+// ==========================
 const showToast = ref(false);
 const toastMessage = ref("");
 function triggerToast(msg, duration = 1500) {
@@ -93,62 +100,80 @@ function triggerToast(msg, duration = 1500) {
   setTimeout(() => showToast.value = false, duration);
 }
 
+// ==========================
+// FORMAT CURRENCY
+// ==========================
 function formatCurrency(num) {
   return new Intl.NumberFormat('id-ID').format(num);
 }
 
+// ==========================
+// FETCH PRODUCTS
+// ==========================
 async function fetchProducts() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/products?select=*`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-  });
-  products.value = await res.json();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/products?select=*`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+    });
+    if (!res.ok) throw new Error("Gagal ambil data produk");
+    products.value = await res.json();
+  } catch (err) {
+    console.error("fetchProducts error:", err);
+    triggerToast("❌ Gagal ambil data produk!");
+  }
 }
 
-// Load cart dari localStorage
+// ==========================
+// ON MOUNT
+// ==========================
 onMounted(async () => {
   await fetchProducts();
+  // load keranjang dari localStorage
   const saved = localStorage.getItem("cartProducts");
   if (saved) cart.value = JSON.parse(saved);
 });
 
-// Filter produk
-const filteredProducts = computed(() => {
-  return products.value.filter(p =>
-    !search.value || p.name.toLowerCase().includes(search.value.toLowerCase())
-  );
-});
+// ==========================
+// FILTER PRODUK
+// ==========================
+const filteredProducts = computed(() => 
+  products.value.filter(p => !search.value || p.name.toLowerCase().includes(search.value.toLowerCase()))
+);
 
-// Add product
+// ==========================
+// KERANJANG & PRODUK
+// ==========================
 function addProduct(p) {
-  if (p.stock <= 0) return triggerToast("Stock habis!");
+  if (p.stock <= 0) return triggerToast("⚠️ Stock habis!");
   const exist = cart.value.find(i => i.product_id === p.id);
   if (exist) {
+    if (exist.quantity + 1 > p.stock) return triggerToast("⚠️ Stock tidak cukup!");
     exist.quantity++;
-    if (exist.quantity > p.stock) exist.quantity = p.stock;
   } else {
     cart.value.push({ product_id: p.id, item_name: p.name, price: p.price, quantity: 1, stock: p.stock });
   }
   localStorage.setItem("cartProducts", JSON.stringify(cart.value));
 }
 
-// Tambah jasa manual
 function addCustom() {
-  if (!customName.value || !customPrice.value) return;
+  if (!customName.value || !customPrice.value) return triggerToast("Nama & harga jasa wajib diisi!");
   cart.value.push({ product_id: null, item_name: customName.value, price: customPrice.value, quantity: 1 });
   customName.value = ""; customPrice.value = 0;
   localStorage.setItem("cartProducts", JSON.stringify(cart.value));
 }
 
-// Hapus item
 function removeItem(i) {
   cart.value.splice(i, 1);
   localStorage.setItem("cartProducts", JSON.stringify(cart.value));
 }
+
 function updateCart() {
   localStorage.setItem("cartProducts", JSON.stringify(cart.value));
 }
 
-// Total & kembalian
+// ==========================
+// TOTAL & STATUS
+// ==========================
 const total = computed(() => cart.value.reduce((sum, i) => sum + i.price * i.quantity, 0));
 const totalAfterDiscount = computed(() => total.value - (Number(discount.value) || 0));
 const kembalian = computed(() => Math.max(Number(partialPayment.value) - totalAfterDiscount.value, 0));
@@ -156,30 +181,28 @@ const autoStatus = computed(() =>
   partialPayment.value >= totalAfterDiscount.value && totalAfterDiscount.value > 0 ? "lunas" : "belum lunas"
 );
 
-// ✅ Checkout yang sudah diperbaiki
-async function checkout() {
-  if (cart.value.length === 0) return triggerToast("Keranjang kosong!");
-
-  const saleId = uuidv4(); // UUID untuk sales.id
+// ==========================
+// SIMPAN SALES
+// ==========================
+async function saveSale() {
+  const saleId = uuidv4();
   const totalValue = totalAfterDiscount.value;
   const paidValue = Number(partialPayment.value) || 0;
   const remaining = Math.max(totalValue - paidValue, 0);
 
   const payload = [{
     id: saleId,
+    created_at: new Date().toISOString(),
     customer_name: customerName.value || "Umum",
     total: totalValue,
     discount: Number(discount.value) || 0,
     partial_payment: paidValue,
     paid_amount: paidValue,
     remaining_amount: remaining,
-    status: autoStatus.value,
-    created_at: new Date().toISOString()
+    status: autoStatus.value
   }];
 
-  console.log("Payload sales:", payload);
-
-  const saleRes = await fetch(`${SUPABASE_URL}/rest/v1/sales`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/sales`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
@@ -190,59 +213,85 @@ async function checkout() {
     body: JSON.stringify(payload)
   });
 
-  const saleData = await saleRes.json();
-  console.log("Sales response:", saleData);
+  const data = await res.json();
+  if (!res.ok || !data[0]) {
+    console.error("Error insert sales:", data);
+    throw new Error(data?.message || "Gagal simpan sales");
+  }
+  return data[0];
+}
 
-  if (!saleData[0]) return triggerToast("Gagal simpan transaksi");
-  const sale_id = saleData[0].id;
+// ==========================
+// CHECKOUT
+// ==========================
+async function checkout() {
+  if (cart.value.length === 0) return triggerToast("⚠️ Keranjang kosong!");
 
-  // Simpan setiap item ke sales_items
-  for (let item of cart.value) {
-    const itemPayload = [{
-      id: uuidv4(),
-      sale_id,
-      product_id: item.product_id,
-      item_name: item.item_name,
-      price: item.price,
-      quantity: item.quantity,
-      subtotal: item.price * item.quantity
-    }];
+  try {
+    const sale = await saveSale();
+    const sale_id = sale.id;
 
-    await fetch(`${SUPABASE_URL}/rest/v1/sales_items`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(itemPayload)
-    });
+    // Simpan setiap item di sales_items
+    for (let item of cart.value) {
+      const itemPayload = [{
+        id: uuidv4(),
+        sale_id,
+        product_id: item.product_id,
+        item_name: item.item_name,
+        price: item.price,
+        quantity: item.quantity,
+        subtotal: item.price * item.quantity
+      }];
 
-    // Update stok produk
-    if (item.product_id) {
-      const newStock = item.stock - item.quantity;
-      await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${item.product_id}`, {
-        method: "PATCH",
+      const itemRes = await fetch(`${SUPABASE_URL}/rest/v1/sales_items`, {
+        method: "POST",
         headers: {
           apikey: SUPABASE_ANON_KEY,
           Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation"
+          "Content-Type": "application/json"
         },
-        body: JSON.stringify({ stock: newStock })
+        body: JSON.stringify(itemPayload)
       });
-    }
-  }
 
-  triggerToast("Transaksi berhasil disimpan!");
-  cart.value = [];
-  discount.value = 0;
-  partialPayment.value = 0;
-  customerName.value = "";
-  localStorage.removeItem("cartProducts");
-  fetchProducts();
+      if (!itemRes.ok) {
+        const errData = await itemRes.json();
+        console.error("Error insert item:", errData);
+        throw new Error(errData?.message || "Gagal simpan item");
+      }
+
+      // Update stock produk jika ada
+      if (item.product_id) {
+        const newStock = item.stock - item.quantity;
+        await fetch(`${SUPABASE_URL}/rest/v1/products?id=eq.${item.product_id}`, {
+          method: "PATCH",
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+            Prefer: "return=representation"
+          },
+          body: JSON.stringify({ stock: newStock })
+        });
+      }
+    }
+
+    // Bersihkan keranjang
+    triggerToast("✅ Transaksi berhasil disimpan!");
+    cart.value = [];
+    discount.value = 0;
+    partialPayment.value = 0;
+    customerName.value = "";
+    localStorage.removeItem("cartProducts");
+    fetchProducts();
+
+  } catch (err) {
+    console.error("checkout error:", err);
+    triggerToast("❌ Transaksi gagal disimpan!");
+  }
 }
 </script>
+
+
 
 
 <style scoped>
