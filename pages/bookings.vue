@@ -47,7 +47,7 @@
     <p v-else class="text-muted text-center">Belum ada booking</p>
 
     <!-- Modal Tambah Booking -->
-    <div class="modal fade" id="bookingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" ref="bookingModalEl" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content rounded-4 shadow">
           <div class="modal-header">
@@ -100,9 +100,6 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const bookings = ref([])
-const search = ref('')
-const statusFilter = ref('')
-
 const newBooking = ref({
   customer_name: '',
   product_name: '',
@@ -113,19 +110,17 @@ const newBooking = ref({
   status: 'Belum jadi',
   due_date: ''
 })
+const search = ref('')
+const statusFilter = ref('')
 
-// --- MODAL ---
+const bookingModalEl = ref(null)
 let bookingModalInstance = null
-function openBookingModal() {
-  const el = document.getElementById('bookingModal')
-  bookingModalInstance = new bootstrap.Modal(el)
-  bookingModalInstance.show()
-}
-function closeBookingModal() {
-  if (bookingModalInstance) bookingModalInstance.hide()
-}
 
-// --- FETCH ---
+onMounted(() => {
+  bookingModalInstance = new bootstrap.Modal(bookingModalEl.value)
+  fetchBookings()
+})
+
 async function fetchBookings() {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
@@ -133,10 +128,18 @@ async function fetchBookings() {
   bookings.value = await res.json()
 }
 
-// --- BOOKING CRUD ---
+function openBookingModal() {
+  bookingModalInstance.show()
+}
+
+function closeBookingModal() {
+  bookingModalInstance.hide()
+}
+
 async function addBooking() {
-  if (!newBooking.value.customer_name || !newBooking.value.product_name || !newBooking.value.total) return alert('Isi nama, produk & total!')
-  
+  if (!newBooking.value.customer_name || !newBooking.value.product_name || !newBooking.value.total)
+    return alert('Isi nama, produk & total!')
+
   const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
     method: 'POST',
     headers: {
@@ -149,8 +152,8 @@ async function addBooking() {
   })
   const data = await res.json()
   bookings.value.push(data[0])
-  closeBookingModal()
   resetForm()
+  closeBookingModal()
 }
 
 function resetForm() {
@@ -174,16 +177,40 @@ async function deleteBooking(id) {
   bookings.value = bookings.value.filter(b => b.id !== id)
 }
 
-// --- BAYAR BOOKING & SIMPAN KE SALES ---
+function formatCurrency(num) {
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(num || 0)
+}
+
+function statusBadge(status) {
+  if (status === 'Belum jadi') return 'badge bg-warning text-dark'
+  if (status === 'Sedang diproses') return 'badge bg-primary'
+  if (status === 'Selesai') return 'badge bg-success'
+  return ''
+}
+
+function formatDate(dateStr) {
+  return new Date(dateStr).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+const filteredBookings = computed(() =>
+  bookings.value.filter(
+    b =>
+      (!search.value ||
+        b.customer_name.toLowerCase().includes(search.value.toLowerCase()) ||
+        b.product_name.toLowerCase().includes(search.value.toLowerCase())) &&
+      (!statusFilter.value || b.status === statusFilter.value)
+  )
+)
+
+// Bayar booking → simpan ke sales & sales_items
 async function payBooking(b) {
   const amount = parseFloat(prompt(`Masukkan jumlah bayar (maks ${b.total - b.paid_amount})`, b.total - b.paid_amount))
   if (isNaN(amount) || amount <= 0) return
-
   const newPaid = b.paid_amount + amount
   const newStatus = newPaid >= b.total ? 'Selesai' : b.status
 
   try {
-    // 1️⃣ Update booking
+    // update booking
     await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${b.id}`, {
       method: 'PATCH',
       headers: {
@@ -194,7 +221,7 @@ async function payBooking(b) {
       body: JSON.stringify({ paid_amount: newPaid, status: newStatus })
     })
 
-    // 2️⃣ Insert ke sales
+    // simpan ke sales
     const saleId = uuidv4()
     const salePayload = [{
       id: saleId,
@@ -219,7 +246,7 @@ async function payBooking(b) {
     const saleData = await saleRes.json()
     if (!saleRes.ok) throw new Error(saleData?.message || 'Gagal simpan sales')
 
-    // 3️⃣ Insert ke sales_items
+    // simpan ke sales_items
     const itemPayload = [{
       id: uuidv4(),
       sale_id: saleData[0].id,
@@ -238,9 +265,12 @@ async function payBooking(b) {
       },
       body: JSON.stringify(itemPayload)
     })
-    if (!itemRes.ok) throw new Error('Gagal simpan sales_items')
+    if (!itemRes.ok) {
+      const errData = await itemRes.json()
+      throw new Error(errData?.message || 'Gagal simpan sales_items')
+    }
 
-    // Update lokal
+    // update lokal
     b.paid_amount = newPaid
     b.status = newStatus
     alert('✅ Pembayaran berhasil dan tersimpan ke laporan sales!')
@@ -250,43 +280,11 @@ async function payBooking(b) {
     alert('❌ Terjadi kesalahan saat menyimpan pembayaran')
   }
 }
-
-// --- COMPUTED ---
-const filteredBookings = computed(() =>
-  bookings.value.filter(
-    b =>
-      (!search.value ||
-        b.customer_name.toLowerCase().includes(search.value.toLowerCase()) ||
-        b.product_name.toLowerCase().includes(search.value.toLowerCase())) &&
-      (!statusFilter.value || b.status === statusFilter.value)
-  )
-)
-
-function statusBadge(status) {
-  if (status === 'Belum jadi') return 'badge bg-warning text-dark'
-  if (status === 'Sedang diproses') return 'badge bg-primary'
-  if (status === 'Selesai') return 'badge bg-success'
-  return ''
-}
-
-function formatCurrency(num) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(num || 0)
-}
-
-function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-onMounted(fetchBookings)
 </script>
 
 <style scoped>
 @media (max-width: 768px) {
-  h2 {
-    font-size: 1.2rem;
-  }
-  .list-group-item h6 {
-    font-size: 1rem;
-  }
+  h2 { font-size: 1.2rem; }
+  .list-group-item h6 { font-size: 1rem; }
 }
 </style>
