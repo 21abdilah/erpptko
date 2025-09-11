@@ -51,7 +51,6 @@ import Chart from 'chart.js/auto'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// --- DASHBOARD ---
 const kpis = ref([
   { title: "Total Sales", value: 0, icon: "bi bi-cart-check" },
   { title: "Revenue", value: 0, icon: "bi bi-cash-stack" },
@@ -60,33 +59,36 @@ const kpis = ref([
 ])
 const topProducts = ref([])
 
-// =================== FORMAT ===================
+let chartInstance = null // ⬅️ mencegah chart double
+
 function formatCurrency(num){
   return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR'}).format(num||0)
 }
 
-// =================== DASHBOARD FETCH ===================
 async function fetchDashboard() {
   try{
     // --- SALES ---
-    const resSales = await fetch(`${supabaseUrl}/rest/v1/sales?select=subtotal,quantity,item_name,sale_date`, {
+    const resSales = await fetch(`${supabaseUrl}/rest/v1/sales?select=subtotal,quantity,item_name,sale_date&order=sale_date.asc`, {
       headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
     })
+    if(!resSales.ok) throw new Error(`Gagal fetch sales: ${resSales.status}`)
     const salesData = await resSales.json()
-    if(!Array.isArray(salesData)) throw new Error("Data sales tidak valid")
 
-    // Total Sales & Revenue
     kpis.value[0].value = salesData.length
-    kpis.value[1].value = formatCurrency(salesData.reduce((sum,s)=>sum+Number(s.subtotal||0),0))
+    kpis.value[1].value = formatCurrency(
+      salesData.reduce((sum,s)=>sum+Number(s.subtotal||0),0)
+    )
 
-    // Chart Bulanan
+    // CHART BULANAN
     const months = Array.from({length:12},(_,i)=>i+1)
     const monthlySales = months.map(m =>
       salesData.filter(s=>new Date(s.sale_date).getMonth()+1===m)
                .reduce((sum,s)=>sum+Number(s.subtotal||0),0)
     )
+
     const ctx = document.getElementById("salesChart").getContext("2d")
-    new Chart(ctx,{
+    if(chartInstance) chartInstance.destroy()
+    chartInstance = new Chart(ctx,{
       type:"line",
       data:{
         labels: months.map(m=>`Bulan ${m}`),
@@ -102,21 +104,19 @@ async function fetchDashboard() {
       options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
     })
 
-    // --- INVENTORY ---
+    // INVENTORY
     const resInv = await fetch(`${supabaseUrl}/rest/v1/inventory?select=id`, {
       headers:{apikey:supabaseKey, Authorization:`Bearer ${supabaseKey}`}
     })
-    const invData = await resInv.json()
-    kpis.value[2].value = Array.isArray(invData)? invData.length:0
+    kpis.value[2].value = (await resInv.json()).length || 0
 
-    // --- EMPLOYEES ---
+    // EMPLOYEES
     const resEmp = await fetch(`${supabaseUrl}/rest/v1/employees?select=id`, {
       headers:{apikey:supabaseKey, Authorization:`Bearer ${supabaseKey}`}
     })
-    const empData = await resEmp.json()
-    kpis.value[3].value = Array.isArray(empData)? empData.length:0
+    kpis.value[3].value = (await resEmp.json()).length || 0
 
-    // --- TOP PRODUCTS ---
+    // TOP PRODUCTS
     const topMap = {}
     salesData.forEach(s=>{ topMap[s.item_name] = (topMap[s.item_name]||0)+Number(s.quantity||0) })
     topProducts.value = Object.entries(topMap)
@@ -124,9 +124,11 @@ async function fetchDashboard() {
       .sort((a,b)=>b.total_quantity - a.total_quantity)
       .slice(0,5)
 
-  }catch(err){ console.error(err); alert("Gagal fetch dashboard: "+err.message) }
+  }catch(err){
+    console.error("Error dashboard:", err)
+    alert("Gagal memuat dashboard. Cek console.")
+  }
 }
 
-// =================== MOUNT ===================
 onMounted(fetchDashboard)
 </script>
