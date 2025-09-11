@@ -4,7 +4,7 @@
 
     <!-- Tombol Tambah Booking -->
     <div class="d-flex justify-content-end mb-3">
-      <button class="btn btn-success d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#bookingModal">
+      <button class="btn btn-success d-flex align-items-center gap-2" @click="openBookingModal">
         ➕ Tambah Pesanan
       </button>
     </div>
@@ -52,7 +52,7 @@
         <div class="modal-content rounded-4 shadow">
           <div class="modal-header">
             <h5 class="modal-title fw-bold">Tambah Booking</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button type="button" class="btn-close" @click="closeBookingModal"></button>
           </div>
           <div class="modal-body">
             <div class="mb-2">
@@ -82,24 +82,10 @@
             <textarea v-model="newBooking.note" class="form-control" placeholder="Catatan (opsional)"></textarea>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+            <button class="btn btn-secondary" @click="closeBookingModal">Batal</button>
             <button class="btn btn-success" @click="addBooking">Simpan</button>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Toast -->
-    <div
-      v-if="showToast"
-      class="toast align-items-center text-bg-success border-0 position-fixed bottom-0 end-0 m-3 show"
-      role="alert"
-      aria-live="assertive"
-      aria-atomic="true"
-    >
-      <div class="d-flex">
-        <div class="toast-body">{{ toastMessage }}</div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" @click="showToast = false"></button>
       </div>
     </div>
   </div>
@@ -108,6 +94,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
+import bootstrap from 'bootstrap'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -115,8 +102,7 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 const bookings = ref([])
 const search = ref('')
 const statusFilter = ref('')
-const showToast = ref(false)
-const toastMessage = ref('')
+
 const newBooking = ref({
   customer_name: '',
   product_name: '',
@@ -128,32 +114,29 @@ const newBooking = ref({
   due_date: ''
 })
 
-// Toast helper
-function triggerToast(msg, duration = 2000) {
-  toastMessage.value = msg
-  showToast.value = true
-  setTimeout(() => (showToast.value = false), duration)
+// --- MODAL ---
+let bookingModalInstance = null
+function openBookingModal() {
+  const el = document.getElementById('bookingModal')
+  bookingModalInstance = new bootstrap.Modal(el)
+  bookingModalInstance.show()
+}
+function closeBookingModal() {
+  if (bookingModalInstance) bookingModalInstance.hide()
 }
 
-// Ambil data booking
+// --- FETCH ---
 async function fetchBookings() {
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*`, {
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-    })
-    bookings.value = await res.json()
-  } catch (err) {
-    console.error(err)
-    triggerToast('❌ Gagal ambil booking')
-  }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+  })
+  bookings.value = await res.json()
 }
 
-// Tambah booking baru
+// --- BOOKING CRUD ---
 async function addBooking() {
-  if (!newBooking.value.customer_name || !newBooking.value.product_name || !newBooking.value.total) {
-    return triggerToast('Isi nama, produk & total!')
-  }
-  const payload = [{ ...newBooking.value, id: uuidv4() }]
+  if (!newBooking.value.customer_name || !newBooking.value.product_name || !newBooking.value.total) return alert('Isi nama, produk & total!')
+  
   const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
     method: 'POST',
     headers: {
@@ -162,17 +145,14 @@ async function addBooking() {
       'Content-Type': 'application/json',
       Prefer: 'return=representation'
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify([newBooking.value])
   })
   const data = await res.json()
   bookings.value.push(data[0])
+  closeBookingModal()
   resetForm()
-  const modal = bootstrap.Modal.getInstance(document.getElementById('bookingModal'))
-  modal.hide()
-  triggerToast('✅ Booking berhasil ditambahkan')
 }
 
-// Reset form modal
 function resetForm() {
   newBooking.value = {
     customer_name: '',
@@ -186,22 +166,15 @@ function resetForm() {
   }
 }
 
-// Hapus booking
 async function deleteBooking(id) {
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`, {
-      method: 'DELETE',
-      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-    })
-    bookings.value = bookings.value.filter(b => b.id !== id)
-    triggerToast('✅ Booking berhasil dihapus')
-  } catch (err) {
-    console.error(err)
-    triggerToast('❌ Gagal hapus booking')
-  }
+  await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`, {
+    method: 'DELETE',
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+  })
+  bookings.value = bookings.value.filter(b => b.id !== id)
 }
 
-// Bayar booking & langsung simpan ke sales + sales_items
+// --- BAYAR BOOKING & SIMPAN KE SALES ---
 async function payBooking(b) {
   const amount = parseFloat(prompt(`Masukkan jumlah bayar (maks ${b.total - b.paid_amount})`, b.total - b.paid_amount))
   if (isNaN(amount) || amount <= 0) return
@@ -270,15 +243,15 @@ async function payBooking(b) {
     // Update lokal
     b.paid_amount = newPaid
     b.status = newStatus
-    triggerToast('✅ Pembayaran berhasil & tersimpan ke sales!')
+    alert('✅ Pembayaran berhasil dan tersimpan ke laporan sales!')
 
   } catch (err) {
     console.error(err)
-    triggerToast('❌ Terjadi kesalahan saat simpan pembayaran')
+    alert('❌ Terjadi kesalahan saat menyimpan pembayaran')
   }
 }
 
-// Filter booking
+// --- COMPUTED ---
 const filteredBookings = computed(() =>
   bookings.value.filter(
     b =>
@@ -289,16 +262,17 @@ const filteredBookings = computed(() =>
   )
 )
 
-// Utility
-function formatCurrency(num) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(num || 0)
-}
 function statusBadge(status) {
   if (status === 'Belum jadi') return 'badge bg-warning text-dark'
   if (status === 'Sedang diproses') return 'badge bg-primary'
   if (status === 'Selesai') return 'badge bg-success'
   return ''
 }
+
+function formatCurrency(num) {
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(num || 0)
+}
+
 function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
@@ -308,7 +282,11 @@ onMounted(fetchBookings)
 
 <style scoped>
 @media (max-width: 768px) {
-  h2 { font-size: 1.2rem; }
-  .list-group-item h6 { font-size: 1rem; }
+  h2 {
+    font-size: 1.2rem;
+  }
+  .list-group-item h6 {
+    font-size: 1rem;
+  }
 }
 </style>
