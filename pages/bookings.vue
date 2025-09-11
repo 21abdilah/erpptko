@@ -93,37 +93,57 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { v4 as uuidv4 } from "uuid"
+import { v4 as uuidv4 } from 'uuid'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// ... kode lain tetap sama
+const bookings = ref([])
+const search = ref('')
+const statusFilter = ref('')
 
-async function payPartial(b) {
-  const maxPay = b.total - b.paid_amount
-  if (maxPay <= 0) return alert("Pembayaran sudah lunas!")
+// Ambil data booking
+async function fetchBookings() {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+  })
+  bookings.value = await res.json()
+}
 
-  const amount = parseFloat(prompt(`Masukkan jumlah bayar (maks ${maxPay})`, maxPay))
+// Format Rupiah
+function formatCurrency(num) {
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(num || 0)
+}
+
+// Badge status
+function statusBadge(status) {
+  if (status === 'Belum jadi') return 'badge bg-warning text-dark'
+  if (status === 'Sedang diproses') return 'badge bg-primary'
+  if (status === 'Selesai') return 'badge bg-success'
+  return ''
+}
+
+// Bayar booking + simpan ke sales
+async function payBooking(b) {
+  const amount = parseFloat(prompt(`Masukkan jumlah bayar (maks ${b.total - b.paid_amount})`, b.total - b.paid_amount))
   if (isNaN(amount) || amount <= 0) return
 
-  // Update nilai di UI
-  b.paid_amount += amount
-  if (b.paid_amount >= b.total) b.status = 'Selesai'
+  const newPaid = b.paid_amount + amount
+  const newStatus = newPaid >= b.total ? 'Selesai' : b.status
 
-  // 1️⃣ Update booking di Supabase
-  await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${b.id}`, {
-    method: 'PATCH',
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ paid_amount: b.paid_amount, status: b.status })
-  })
-
-  // 2️⃣ Simpan ke sales & sales_items
   try {
+    // 1️⃣ Update booking
+    await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${b.id}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ paid_amount: newPaid, status: newStatus })
+    })
+
+    // 2️⃣ Insert ke sales
     const saleId = uuidv4()
     const salePayload = [{
       id: saleId,
@@ -131,57 +151,71 @@ async function payPartial(b) {
       customer_name: b.customer_name,
       total: b.total,
       discount: 0,
-      partial_payment: amount,
-      paid_amount: amount,
-      remaining_amount: Math.max(b.total - b.paid_amount, 0),
-      status: b.status === "Selesai" ? "lunas" : "belum lunas"
+      paid_amount: newPaid,
+      remaining_amount: Math.max(b.total - newPaid, 0),
+      status: newStatus
     }]
 
     const saleRes = await fetch(`${SUPABASE_URL}/rest/v1/sales`, {
-      method: "POST",
+      method: 'POST',
       headers: {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation"
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation'
       },
       body: JSON.stringify(salePayload)
     })
-
     const saleData = await saleRes.json()
-    if (!saleRes.ok) {
-      console.error("❌ Gagal insert sales:", saleData)
-      alert("Gagal menyimpan ke laporan sales!")
-      return
-    }
+    if (!saleRes.ok) throw new Error(saleData?.message || 'Gagal simpan sales')
 
-    // 3️⃣ Simpan item ke sales_items
+    // 3️⃣ Insert ke sales_items
     const itemPayload = [{
       id: uuidv4(),
-      sale_id: saleId,
-      product_id: null, // booking tidak terhubung produk stok
+      sale_id: saleData[0].id,
+      product_id: null, // bisa diisi jika ada referensi produk
       item_name: b.product_name,
-      price: b.total / (b.quantity || 1),
+      price: b.total,
       quantity: b.quantity,
       subtotal: b.total
     }]
 
-    await fetch(`${SUPABASE_URL}/rest/v1/sales_items`, {
-      method: "POST",
+    const itemRes = await fetch(`${SUPABASE_URL}/rest/v1/sales_items`, {
+      method: 'POST',
       headers: {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json"
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(itemPayload)
     })
+    if (!itemRes.ok) {
+      const errData = await itemRes.json()
+      throw new Error(errData?.message || 'Gagal simpan sales_items')
+    }
 
-    console.log("✅ Pembayaran + laporan berhasil disimpan")
+    // Update lokal
+    b.paid_amount = newPaid
+    b.status = newStatus
+    alert('✅ Pembayaran berhasil dan tersimpan ke laporan sales!')
+
   } catch (err) {
-    console.error("❌ Error simpan laporan:", err)
-    alert("Gagal simpan ke laporan")
+    console.error(err)
+    alert('❌ Terjadi kesalahan saat menyimpan pembayaran')
   }
 }
+
+const filteredBookings = computed(() =>
+  bookings.value.filter(
+    b =>
+      (!search.value ||
+        b.customer_name.toLowerCase().includes(search.value.toLowerCase()) ||
+        b.product_name.toLowerCase().includes(search.value.toLowerCase())) &&
+      (!statusFilter.value || b.status === statusFilter.value)
+  )
+)
+
+onMounted(fetchBookings)
 </script>
 
 
