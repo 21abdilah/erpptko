@@ -1,82 +1,88 @@
 <template>
-  <div class="p-4">
-    <h2 class="mb-3 text-center fw-bold">📋 Catatan Pesanan</h2>
+  <div class="container py-4">
+    <h2 class="text-center mb-3 fw-bold">📅 BOOKINGS</h2>
 
     <!-- Tombol Tambah Booking -->
-    <div class="d-flex justify-content-end mb-3">
-      <button class="btn btn-success d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#bookingModal">
-        ➕ Tambah Pesanan
-      </button>
+    <div class="text-end mb-3">
+      <button class="btn btn-primary" @click="openModal()">Tambah Booking</button>
     </div>
 
-    <!-- Filter / Search -->
-    <div class="d-flex flex-wrap gap-2 mb-3">
-      <input v-model="search" class="form-control flex-grow-1" placeholder="Cari nama / produk" />
-      <select v-model="statusFilter" class="form-select w-auto">
-        <option value="">Semua Status</option>
-        <option value="Belum jadi">Belum jadi</option>
-        <option value="Sedang diproses">Sedang diproses</option>
-        <option value="Selesai">Selesai</option>
-      </select>
+    <!-- Table Bookings -->
+    <div class="table-responsive shadow-sm rounded" style="max-height: 450px; overflow-y: auto;">
+      <table class="table table-hover table-striped mb-0">
+        <thead class="table-light sticky-top">
+          <tr>
+            <th>Nama</th>
+            <th>Tanggal</th>
+            <th>Total</th>
+            <th>Status</th>
+            <th class="text-center">Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="b in bookings" :key="b.id">
+            <td>{{ b.customer_name }}</td>
+            <td>{{ formatDate(b.booking_date) }}</td>
+            <td>{{ formatCurrency(b.total) }}</td>
+            <td>
+              <span :class="statusClass(b.status)">{{ b.status }}</span>
+            </td>
+            <td class="text-center">
+              <button class="btn btn-sm btn-warning me-1" @click="editBooking(b)">Edit</button>
+              <button class="btn btn-sm btn-danger" @click="deleteBooking(b.id)">Hapus</button>
+            </td>
+          </tr>
+          <tr v-if="bookings.length === 0">
+            <td colspan="5" class="text-center text-muted">Tidak ada booking</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
-    <!-- Daftar Booking -->
-    <div v-if="filteredBookings.length" class="list-group shadow-sm rounded">
-      <div
-        v-for="b in filteredBookings"
-        :key="b.id"
-        class="list-group-item d-flex justify-content-between align-items-start flex-wrap"
-      >
-        <div class="flex-grow-1">
-          <h6 class="fw-bold">{{ b.customer_name }} - {{ b.product_name }}</h6>
-          <small>
-            Qty: {{ b.quantity }} |
-            Total: {{ formatCurrency(b.total) }} |
-            Paid: {{ formatCurrency(b.paid_amount) }} |
-            Status: <span :class="statusBadge(b.status)">{{ b.status }}</span>
-            <template v-if="b.due_date"> | Jatuh tempo: {{ formatDate(b.due_date) }}</template>
-          </small>
-          <p v-if="b.note" class="mb-0 text-muted">{{ b.note }}</p>
-        </div>
-        <div class="d-flex gap-2 mt-2 mt-md-0">
-          <button v-if="b.status !== 'Selesai'" class="btn btn-sm btn-primary" @click="payBooking(b)">Bayar</button>
-          <button class="btn btn-sm btn-danger" @click="deleteBooking(b.id)">Hapus</button>
+    <!-- Modal Booking -->
+    <div class="modal fade" tabindex="-1" ref="modalRef">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">{{ editMode ? 'Edit Booking' : 'Tambah Booking' }}</h5>
+            <button type="button" class="btn-close" @click="closeModal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-2">
+              <label class="form-label">Nama Customer</label>
+              <input v-model="form.customer_name" type="text" class="form-control" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Tanggal</label>
+              <input v-model="form.booking_date" type="date" class="form-control" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Total</label>
+              <input v-model.number="form.total" type="number" class="form-control" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Status</label>
+              <select v-model="form.status" class="form-select">
+                <option value="pending">Pending</option>
+                <option value="paid">Paid</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="closeModal">Batal</button>
+            <button class="btn btn-primary" @click="saveBooking">{{ editMode ? 'Update' : 'Simpan' }}</button>
+          </div>
         </div>
       </div>
     </div>
-    <p v-else class="text-muted text-center">Belum ada booking</p>
 
-    <!-- Modal Tambah Booking -->
-    <div class="modal fade" id="bookingModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content rounded-4 shadow">
-          <div class="modal-header">
-            <h5 class="modal-title fw-bold">Tambah Booking</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <input v-model="newBooking.customer_name" class="form-control mb-2" placeholder="Nama Pelanggan" />
-            <input v-model="newBooking.product_name" class="form-control mb-2" placeholder="Produk / Jasa" />
-            <div class="row g-2 mb-2">
-              <div class="col-6">
-                <input type="number" v-model.number="newBooking.quantity" class="form-control" placeholder="Qty" />
-              </div>
-              <div class="col-6">
-                <input type="number" v-model.number="newBooking.total" class="form-control" placeholder="Total" />
-              </div>
-            </div>
-            <select v-model="newBooking.status" class="form-select mb-2">
-              <option value="Belum jadi">Belum jadi</option>
-              <option value="Sedang diproses">Sedang diproses</option>
-              <option value="Selesai">Selesai</option>
-            </select>
-            <input type="date" v-model="newBooking.due_date" class="form-control mb-2" />
-            <textarea v-model="newBooking.note" class="form-control" placeholder="Catatan (opsional)"></textarea>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-            <button class="btn btn-success" @click="addBooking">Simpan</button>
-          </div>
+    <!-- Toast -->
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 1055">
+      <div ref="toastRef" class="toast align-items-center text-white bg-success border-0" role="alert">
+        <div class="d-flex">
+          <div class="toast-body">{{ toastMessage }}</div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" @click="hideToast"></button>
         </div>
       </div>
     </div>
@@ -84,187 +90,109 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { v4 as uuidv4 } from 'uuid'
+import { ref, onMounted, nextTick } from "vue";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const table = "bookings";
 
-const bookings = ref([])
-const search = ref('')
-const statusFilter = ref('')
-const newBooking = ref({
-  customer_name: '',
-  product_name: '',
-  quantity: 1,
-  total: 0,
-  paid_amount: 0,
-  note: '',
-  status: 'Belum jadi',
-  due_date: ''
-})
+const bookings = ref([]);
+const modalRef = ref(null);
+const toastRef = ref(null);
+const toastMessage = ref("");
+const editMode = ref(false);
+const currentId = ref(null);
 
-// Ambil semua booking
+const form = ref({ customer_name: "", booking_date: "", total: 0, status: "pending" });
+
+let bootstrapModal, bootstrapToast;
+
 async function fetchBookings() {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?select=*`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-  })
-  bookings.value = await res.json()
+  const res = await fetch(`${supabaseUrl}/rest/v1/${table}?select=*`, {
+    headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+  });
+  bookings.value = await res.json();
 }
 
-// Tambah booking
-async function addBooking() {
-  if (!newBooking.value.customer_name || !newBooking.value.product_name || !newBooking.value.total) return alert('Isi nama, produk & total!')
-
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings`, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation'
-    },
-    body: JSON.stringify([newBooking.value])
-  })
-  const data = await res.json()
-  bookings.value.push(data[0])
-  resetForm()
-
-  // Tutup modal Bootstrap 5
-  const modalEl = document.getElementById('bookingModal')
-  const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl)
-  modal.hide()
-}
-
-function resetForm() {
-  newBooking.value = {
-    customer_name: '',
-    product_name: '',
-    quantity: 1,
-    total: 0,
-    paid_amount: 0,
-    note: '',
-    status: 'Belum jadi',
-    due_date: ''
-  }
-}
-
-// Hapus booking
-async function deleteBooking(id) {
-  await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`, {
-    method: 'DELETE',
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-  })
-  bookings.value = bookings.value.filter(b => b.id !== id)
-}
-
-// Bayar booking → simpan ke sales & sales_items
-async function payBooking(b) {
-  const amount = parseFloat(prompt(`Masukkan jumlah bayar (maks ${b.total - b.paid_amount})`, b.total - b.paid_amount))
-  if (isNaN(amount) || amount <= 0) return
-
-  const newPaid = b.paid_amount + amount
-  const newStatus = newPaid >= b.total ? 'Selesai' : b.status
+async function saveBooking() {
+  if (!form.value.customer_name || !form.value.booking_date) return showToast("Lengkapi data!", "danger");
 
   try {
-    // Update booking
-    await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${b.id}`, {
-      method: 'PATCH',
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ paid_amount: newPaid, status: newStatus })
-    })
-
-    // Simpan ke sales
-    const salePayload = [{
-      id: uuidv4(),
-      created_at: new Date().toISOString(),
-      customer_name: b.customer_name,
-      total: b.total,
-      discount: 0,
-      paid_amount: newPaid,
-      remaining_amount: Math.max(b.total - newPaid, 0),
-      status: newStatus
-    }]
-    const saleRes = await fetch(`${SUPABASE_URL}/rest/v1/sales`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation'
-      },
-      body: JSON.stringify(salePayload)
-    })
-    const saleData = await saleRes.json()
-    if (!saleRes.ok || !saleData[0]) throw new Error('Gagal simpan sales')
-
-    // Simpan ke sales_items
-    const itemPayload = [{
-      id: uuidv4(),
-      sale_id: saleData[0].id,
-      product_id: null,
-      item_name: b.product_name,
-      price: b.total,
-      quantity: b.quantity,
-      subtotal: b.total
-    }]
-    const itemRes = await fetch(`${SUPABASE_URL}/rest/v1/sales_items`, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(itemPayload)
-    })
-    if (!itemRes.ok) throw new Error('Gagal simpan sales_items')
-
-    // Update lokal
-    b.paid_amount = newPaid
-    b.status = newStatus
-    alert('✅ Pembayaran berhasil dan tersimpan ke laporan sales!')
-
+    if (editMode.value) {
+      await fetch(`${supabaseUrl}/rest/v1/${table}?id=eq.${currentId.value}`, {
+        method: "PATCH",
+        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(form.value)
+      });
+      showToast("Booking berhasil diupdate", "success");
+    } else {
+      await fetch(`${supabaseUrl}/rest/v1/${table}`, {
+        method: "POST",
+        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify([form.value])
+      });
+      showToast("Booking berhasil ditambahkan", "success");
+    }
+    closeModal();
+    fetchBookings();
   } catch (err) {
-    console.error(err)
-    alert('❌ Terjadi kesalahan saat menyimpan pembayaran')
+    console.error(err);
+    showToast("Gagal menyimpan booking", "danger");
   }
 }
 
-const filteredBookings = computed(() =>
-  bookings.value.filter(
-    b =>
-      (!search.value ||
-        b.customer_name.toLowerCase().includes(search.value.toLowerCase()) ||
-        b.product_name.toLowerCase().includes(search.value.toLowerCase())) &&
-      (!statusFilter.value || b.status === statusFilter.value)
-  )
-)
-
-function statusBadge(status) {
-  if (status === 'Belum jadi') return 'badge bg-warning text-dark'
-  if (status === 'Sedang diproses') return 'badge bg-primary'
-  if (status === 'Selesai') return 'badge bg-success'
-  return ''
+function editBooking(b) {
+  editMode.value = true;
+  currentId.value = b.id;
+  form.value = { ...b };
+  openModal();
 }
 
-function formatCurrency(num) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(num || 0)
+async function deleteBooking(id) {
+  if (!confirm("Yakin hapus booking?")) return;
+  await fetch(`${supabaseUrl}/rest/v1/${table}?id=eq.${id}`, {
+    method: "DELETE",
+    headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
+  });
+  fetchBookings();
+  showToast("Booking berhasil dihapus", "success");
 }
 
-function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+function openModal() { nextTick(() => bootstrapModal.show()); }
+function closeModal() { 
+  bootstrapModal.hide(); 
+  editMode.value = false; 
+  currentId.value = null;
+  form.value = { customer_name:"", booking_date:"", total:0, status:"pending" };
 }
 
-onMounted(fetchBookings)
+function showToast(msg, type = "success") {
+  toastMessage.value = msg;
+  toastRef.value.className = `toast align-items-center text-white bg-${type} border-0`;
+  const t = new bootstrapToast(toastRef.value);
+  t.show();
+}
+function hideToast() {
+  const t = bootstrapToast.getInstance(toastRef.value);
+  t?.hide();
+}
+
+function formatDate(d) { return new Date(d).toLocaleDateString("id-ID"); }
+function formatCurrency(num) { return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR'}).format(num||0); }
+function statusClass(status) {
+  return status === "paid" ? "badge bg-success" :
+         status === "cancelled" ? "badge bg-danger" :
+         "badge bg-warning text-dark";
+}
+
+onMounted(async () => {
+  const bs = await import('bootstrap/dist/js/bootstrap.esm.js');
+  bootstrapModal = new bs.Modal(modalRef.value);
+  bootstrapToast = bs.Toast;
+  fetchBookings();
+});
 </script>
 
 <style scoped>
-@media (max-width: 768px) {
-  h2 { font-size: 1.2rem; }
-  .list-group-item h6 { font-size: 1rem; }
-}
+.table-hover tbody tr:hover { background-color: #ffe5b4; transition:0.2s; }
 </style>
