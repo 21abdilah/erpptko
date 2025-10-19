@@ -14,7 +14,7 @@
     <!-- Brand -->
     <div class="d-flex align-items-center fw-bold fs-5 text-primary">
       <i class="bi bi-speedometer2 me-2"></i>
-      ERP Dashboard
+      
     </div>
 
     <!-- Actions -->
